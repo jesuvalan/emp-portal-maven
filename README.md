@@ -5,11 +5,11 @@
 - Build the project with maven 
 ```java
 mvn clean install
-
+```
 - Run the project with maven 
 ```java
 mvn spring-boot:run
-
+```
 
 ### endpoints available
 
