@@ -12,10 +12,10 @@ mvn spring-boot:run
 ```
 
 ### endpoints available
-
+```java
 localhost:8200/portal/health
 localhost:8200/portal/health/info
-
+```
 ### dependancies
 - postgresql running locally
 
