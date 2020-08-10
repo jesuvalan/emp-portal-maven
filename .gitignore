@@ -1,0 +1,14 @@
+.classpath
+.factorypath
+.project
+/bin
+/target
+/.settings
+/test-output
+/.idea/
+/${sys
+.sts4-cache
+vendor-order-api.iml
+taskDefinitionCurrent.json
+taskDefinitionDeployed.json
+taskDefinitionRevision.json

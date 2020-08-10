@@ -1,0 +1,108 @@
+sudo: false
+
+dist: trusty
+
+language: java
+
+jdk: oraclejdk8
+
+services:
+  - docker
+
+before_install:
+  - sudo pip install --upgrade pip
+  - sudo pip install --ignore-installed awscli
+  
+before_script:
+  - aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
+  - aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+  - aws configure set region $AWS_REGION
+  - export SONAR_DIR=/tmp/sonar && mkdir -p $SONAR_DIR
+  
+env:
+  global:
+    - AWS_REGION=$AWS_REGION
+    - ENV=`if [[ "$TRAVIS_BRANCH"  = "master" ]]; then echo "dev"; elif [[ "$TRAVIS_BRANCH" = "prod" ]]; then echo "prod"; elif [[ "$TRAVIS_BRANCH" = "uat" ]]; then echo "uat"; elif [[ "$TRAVIS_BRANCH" = "dev" ]]; then echo "dev"; fi`
+    - PROJECT_NAME=capestart-emp-portal-api
+    - ECR_PROJECT_NAME=ecr-capestart-emp-poortal-api #container registry
+
+    - ECR_REPO=${account_id}.dkr.ecr.us-east-1.amazonaws.com/$ECR_PROJECT_NAME
+
+    - ECS_CLUSTER_NAME=ecs-cluster
+    - ECS_SERVICE_NAME=service-name
+    - ECS_TASK_DEF=td-capestart-emp-portal-api
+
+addons:
+  sonarcloud:
+    organization: capestart
+
+install:
+  - true
+
+cache:
+  directories:
+    - $HOME/.sonar/cache
+    - $HOME/.m2/repository
+
+    
+before_cache:
+  - cd $HOME/.m2/repository/com/capestart
+  
+  
+branches:
+  only:
+    - master #dev 
+    - uat 
+    - dev
+    - prod
+
+stages: 
+  - installAndtest
+  - pushDockerImage
+  - deploy
+
+
+jobs:
+  include:
+    - stage: installAndtest
+      if: type == pull_request
+      name: install and run unit test
+      script:
+        - rm -R -f ./target
+        - mvn clean install sonar:sonar -Pcoverage -Dsonar.projectKey=capestart-emp-portal-api #TODO: sonar integration
+        - sonar-scanner
+
+    - stage: pushDockerImage
+      if: type != pull_request AND branch = master
+      name: build Ecr image and push to ecr repo
+      script: 
+        - ECR_TAG=1.0.$TRAVIS_BUILD_NUMBER
+        - echo "dockerVersion="$ECR_TAG > src/main/resources/buildinfo.properties
+        - mvn clean install sonar:sonar -Pcoverage -Dsonar.projectKey=capestart-emp-portal-api
+        - sonar-scanner
+        - mvn clean install -DskipTests=true
+        - $(aws ecr get-login --no-include-email --region $AWS_REGION | sed 's/-e none//') || error "AWS ECR Login Failed"
+        - docker build -t $ECR_PROJECT_NAME:$ECR_TAG .
+        - docker tag $ECR_PROJECT_NAME:$ECR_TAG $ECR_REPO:$ECR_TAG
+        - docker tag $ECR_PROJECT_NAME:$ECR_TAG $ECR_REPO:latest
+        - docker push $ECR_REPO:latest  || error "Docker Push Failed"
+        - docker push $ECR_REPO:$ECR_TAG || error "Docker Push Failed"
+        
+    - stage: deploy
+      if: type != pull_request AND branch IN ( "master", "dev", "uat", "prod" )
+      name: ECS deployment
+      dist: xenial
+      language: python
+      python:
+        - "3.6.7"
+      script:
+        - echo "Deploying to ECS"
+        - bash ecs-deploy.sh             
+        
+#notifications:
+#  slack:
+#    rooms:
+#      - secure: "encryped key"
+#    on_pull_requests: false
+#    on_success: always
+#    on_failure: always 
